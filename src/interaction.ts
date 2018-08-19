@@ -13,21 +13,25 @@ export class Interaction {
 
   protected onMouseDown(e:PIXI.interaction.InteractionEvent):void {
 
+    this._mouseIsDown = true;
   }
+  private _mouseIsDown:boolean = false;
 
   protected onMouseMove(e:PIXI.interaction.InteractionEvent):void {
     const p = e.data.getLocalPosition(this.app.stage);
     const now = window.performance.now() / 1000;
-    const elapsed = now - this._lastDropTime;
-    if (elapsed > 0.25) {
-      this.app.ripple.disturb(p.x, p.y);
-      this._lastDropTime = now;
+    if (this._mouseIsDown) {
+      const elapsed = now - this._lastDropTime;
+      if (elapsed >= 0.1) {
+        this.app.ripple.disturb(p.x, p.y);
+        this._lastDropTime = now;
+      }
     }
   }
   private _lastDropTime:number = 0.0;
 
   protected onMouseUp(e:PIXI.interaction.InteractionEvent):void {
-
+    this._mouseIsDown = false;
   }
 
   protected onClick(e:PIXI.interaction.InteractionEvent):void {

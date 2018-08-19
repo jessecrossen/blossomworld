@@ -196,14 +196,143 @@ System.register("bottom", ["pixi.js"], function (exports_2, context_2) {
         }
     };
 });
-System.register("ripple", ["pixi.js", "pixi-filters"], function (exports_3, context_3) {
+System.register("fish", ["pixi.js"], function (exports_3, context_3) {
     "use strict";
     var __moduleName = context_3 && context_3.id;
-    var PIXI, filter, Ripple;
+    var PIXI, Fishies;
     return {
         setters: [
             function (PIXI_3) {
                 PIXI = PIXI_3;
+            }
+        ],
+        execute: function () {
+            Fishies = class Fishies {
+                constructor() {
+                    this.view = new PIXI.Sprite();
+                    this._fish = new Set();
+                    this._width = 0;
+                    this._height = 0;
+                    this._graphics = new PIXI.Graphics();
+                    this.view.addChild(this._graphics);
+                    //!!!
+                    this._fish.add({ x: 600, y: 400, width: 80, length: 480, angle: 0, cycle: 0 });
+                }
+                get width() { return (this._width); }
+                get height() { return (this._height); }
+                resize(w, h) {
+                    if ((w === this.width) && (h === this.height))
+                        return;
+                    this._width = w;
+                    this._height = h;
+                }
+                update() {
+                    this._graphics.clear();
+                    for (const f of this._fish) {
+                        this._drawFish(this._graphics, f);
+                        f.cycle = (f.cycle + 0.02) % 1;
+                        f.x += f.length * 0.02;
+                        if (f.x > this.width + f.length)
+                            f.x -= (this.width + (f.length * 1.5));
+                    }
+                }
+                _drawFish(g, f) {
+                    const offset = (p, a, len) => ({ x: p.x + (Math.cos(a) * len),
+                        y: p.y + (Math.sin(a) * len) });
+                    const rightAngle = Math.PI / 2;
+                    const headLen = f.length * 0.3;
+                    const tailLen = f.length * 0.7;
+                    const tailWidth = f.width * 0.125;
+                    const center = offset(f, f.angle + rightAngle, Math.sin(f.cycle * Math.PI * 2) * f.width * 0.4);
+                    const bendForCycle = (cycle) => Math.sin(cycle * Math.PI * 2) * 0.25;
+                    const bend = bendForCycle(f.cycle);
+                    const headAngle = f.angle - bend;
+                    const noseCurve = f.width * 0.3;
+                    const nose = offset(center, headAngle, headLen);
+                    const noseLeft = offset(nose, headAngle - rightAngle, noseCurve);
+                    const noseRight = offset(nose, headAngle + rightAngle, noseCurve);
+                    const bendFactor = Math.min(Math.abs(bend) / 0.25, 1.0) * 0.25;
+                    const midCurve = (headLen + tailLen) * 0.25;
+                    const midCurveOuter = midCurve * (0.6 + (bendFactor * 1.75));
+                    const midCurveInner = midCurve * (0.6 - bendFactor);
+                    const midCurveLeft = bend < 0 ? midCurveOuter : midCurveInner;
+                    const midCurveRight = bend > 0 ? midCurveOuter : midCurveInner;
+                    const midLeft = offset(center, f.angle - rightAngle, f.width * 0.5);
+                    const midRight = offset(center, f.angle + rightAngle, f.width * 0.5);
+                    const midLeftFront = offset(midLeft, f.angle, midCurveLeft);
+                    const midLeftBack = offset(midLeft, f.angle, -midCurveLeft);
+                    const midRightFront = offset(midRight, f.angle, midCurveRight);
+                    const midRightBack = offset(midRight, f.angle, -midCurveRight);
+                    const tailAngle = f.angle + Math.PI + bend;
+                    const tailCurve = tailLen * 0.3;
+                    const tailCurveAngle = f.angle - bendForCycle((f.cycle + 0.25) % 1);
+                    const tail = offset(center, tailAngle, tailLen);
+                    const tailLeft = offset(tail, tailAngle + rightAngle, tailWidth);
+                    const tailRight = offset(tail, tailAngle - rightAngle, tailWidth);
+                    const tailLeftFront = offset(tailLeft, tailCurveAngle, tailCurve);
+                    const tailRightFront = offset(tailRight, tailCurveAngle, tailCurve);
+                    const tailLeftBack = offset(tailLeft, tailCurveAngle, -(tailCurve * 0.25));
+                    const tailRightBack = offset(tailRight, tailCurveAngle, -(tailCurve * 0.25));
+                    const pecRadius = f.width * 0.6;
+                    const pecCurve = pecRadius * 0.3;
+                    const pecLeftAngle = tailCurveAngle - (rightAngle * 1.7);
+                    const pecRightAngle = tailCurveAngle + (rightAngle * 1.7);
+                    const pecLeft = offset(midLeft, pecLeftAngle, pecRadius);
+                    const pecRight = offset(midRight, pecRightAngle, pecRadius);
+                    const pecLeftControl = offset(midLeft, f.angle - rightAngle, pecCurve);
+                    const pecRightControl = offset(midRight, f.angle + rightAngle, pecCurve);
+                    const pecCenter = offset(center, tailAngle, pecRadius * 0.6);
+                    const tailfinLen = f.length * 0.25;
+                    const tailfinRadius = f.width * 0.6;
+                    const tailfinCurve = tailfinLen * 0.6;
+                    const tailfinAngle = f.angle + Math.PI +
+                        (bendForCycle((f.cycle + 0.2) % 1) * 1.5);
+                    const tailfin = offset(tail, headAngle, -tailfinLen);
+                    const tailfinLeft = offset(tailfin, tailfinAngle + (rightAngle * 0.25), tailfinRadius);
+                    const tailfinRight = offset(tailfin, tailfinAngle - (rightAngle * 0.25), tailfinRadius);
+                    const tailfinLeftFront = offset(tailfinLeft, tailfinAngle, -tailfinCurve);
+                    const tailfinRightFront = offset(tailfinRight, tailfinAngle, -tailfinCurve);
+                    const tailfinNotch = offset(tail, headAngle, -(tailfinLen * 0.5));
+                    g.lineStyle(0);
+                    g.beginFill(0x000000);
+                    g.moveTo(nose.x, nose.y);
+                    g.bezierCurveTo(noseLeft.x, noseLeft.y, midLeftFront.x, midLeftFront.y, midLeft.x, midLeft.y);
+                    g.bezierCurveTo(midLeftBack.x, midLeftBack.y, tailLeftFront.x, tailLeftFront.y, tailLeft.x, tailLeft.y);
+                    g.bezierCurveTo(tailLeftBack.x, tailLeftBack.y, tailfinLeftFront.x, tailfinLeftFront.y, tailfinLeft.x, tailfinLeft.y);
+                    g.bezierCurveTo(tailfinLeftFront.x, tailfinLeftFront.y, tailfinNotch.x, tailfinNotch.y, tail.x, tail.y);
+                    g.bezierCurveTo(tailfinNotch.x, tailfinNotch.y, tailfinRightFront.x, tailfinRightFront.y, tailfinRight.x, tailfinRight.y);
+                    g.bezierCurveTo(tailfinRightFront.x, tailfinRightFront.y, tailRightBack.x, tailRightBack.y, tailRight.x, tailRight.y);
+                    g.bezierCurveTo(tailRightFront.x, tailRightFront.y, midRightBack.x, midRightBack.y, midRight.x, midRight.y);
+                    g.bezierCurveTo(midRightFront.x, midRightFront.y, noseRight.x, noseRight.y, nose.x, nose.y);
+                    g.endFill();
+                    g.beginFill(0x000000, 0.5);
+                    g.moveTo(tailLeft.x, tailLeft.y);
+                    g.bezierCurveTo(tailLeftBack.x, tailLeftBack.y, tailfinLeftFront.x, tailfinLeftFront.y, tailfinLeft.x, tailfinLeft.y);
+                    g.lineTo(tailfin.x, tailfin.y);
+                    g.lineTo(tailfinRight.x, tailfinRight.y);
+                    g.bezierCurveTo(tailfinRightFront.x, tailfinRightFront.y, tailRightBack.x, tailRightBack.y, tailRight.x, tailRight.y);
+                    g.lineTo(tailLeft.x, tailLeft.y);
+                    g.moveTo(midLeft.x, midLeft.y);
+                    g.quadraticCurveTo(pecLeftControl.x, pecLeftControl.y, pecLeft.x, pecLeft.y);
+                    g.lineTo(pecCenter.x, pecCenter.y);
+                    g.lineTo(pecRight.x, pecRight.y);
+                    g.quadraticCurveTo(pecRightControl.x, pecRightControl.y, midRight.x, midRight.y);
+                    g.lineTo(midLeft.x, midLeft.y);
+                    g.endFill();
+                }
+            };
+            exports_3("Fishies", Fishies);
+        }
+    };
+});
+System.register("ripple", ["pixi.js", "pixi-filters"], function (exports_4, context_4) {
+    "use strict";
+    var __moduleName = context_4 && context_4.id;
+    var PIXI, filter, Ripple;
+    return {
+        setters: [
+            function (PIXI_4) {
+                PIXI = PIXI_4;
             },
             function (filter_1) {
                 filter = filter_1;
@@ -284,7 +413,7 @@ System.register("ripple", ["pixi.js", "pixi-filters"], function (exports_3, cont
                         const amp = c.amplitude * 0.1;
                         for (let i = 0; i < c.stops; i++) {
                             const pos = i / (c.stops - 1);
-                            const v = (i % 2 == 0) ? '255' : '0';
+                            const v = (i % 2 == 0) ? '223' : '32';
                             g.addColorStop(pos, 'rgba(' + v + ', ' + v + ', ' + v + ', ' + amp + ')');
                         }
                         ctx.fillStyle = g;
@@ -335,13 +464,13 @@ System.register("ripple", ["pixi.js", "pixi-filters"], function (exports_3, cont
                     }
                 }
             };
-            exports_3("Ripple", Ripple);
+            exports_4("Ripple", Ripple);
         }
     };
 });
-System.register("interaction", [], function (exports_4, context_4) {
+System.register("interaction", [], function (exports_5, context_5) {
     "use strict";
-    var __moduleName = context_4 && context_4.id;
+    var __moduleName = context_5 && context_5.id;
     var Interaction;
     return {
         setters: [],
@@ -349,6 +478,7 @@ System.register("interaction", [], function (exports_4, context_4) {
             Interaction = class Interaction {
                 constructor(app) {
                     this.app = app;
+                    this._mouseIsDown = false;
                     this._lastDropTime = 0.0;
                     app.stage.interactive = true;
                     app.stage.addListener('mousedown', this.onMouseDown.bind(this));
@@ -357,31 +487,35 @@ System.register("interaction", [], function (exports_4, context_4) {
                     app.stage.addListener('click', this.onClick.bind(this));
                 }
                 onMouseDown(e) {
+                    this._mouseIsDown = true;
                 }
                 onMouseMove(e) {
                     const p = e.data.getLocalPosition(this.app.stage);
                     const now = window.performance.now() / 1000;
-                    const elapsed = now - this._lastDropTime;
-                    if (elapsed > 0.25) {
-                        this.app.ripple.disturb(p.x, p.y);
-                        this._lastDropTime = now;
+                    if (this._mouseIsDown) {
+                        const elapsed = now - this._lastDropTime;
+                        if (elapsed >= 0.1) {
+                            this.app.ripple.disturb(p.x, p.y);
+                            this._lastDropTime = now;
+                        }
                     }
                 }
                 onMouseUp(e) {
+                    this._mouseIsDown = false;
                 }
                 onClick(e) {
                     const p = e.data.getLocalPosition(this.app.stage);
                     this.app.ripple.disturb(p.x, p.y);
                 }
             };
-            exports_4("Interaction", Interaction);
+            exports_5("Interaction", Interaction);
         }
     };
 });
-System.register("app", ["core", "bottom", "ripple", "interaction"], function (exports_5, context_5) {
+System.register("app", ["core", "bottom", "fish", "ripple", "interaction"], function (exports_6, context_6) {
     "use strict";
-    var __moduleName = context_5 && context_5.id;
-    var core_1, bottom_1, ripple_1, interaction_1, App;
+    var __moduleName = context_6 && context_6.id;
+    var core_1, bottom_1, fish_1, ripple_1, interaction_1, App;
     return {
         setters: [
             function (core_1_1) {
@@ -389,6 +523,9 @@ System.register("app", ["core", "bottom", "ripple", "interaction"], function (ex
             },
             function (bottom_1_1) {
                 bottom_1 = bottom_1_1;
+            },
+            function (fish_1_1) {
+                fish_1 = fish_1_1;
             },
             function (ripple_1_1) {
                 ripple_1 = ripple_1_1;
@@ -406,25 +543,25 @@ System.register("app", ["core", "bottom", "ripple", "interaction"], function (ex
                     this.ripple = new ripple_1.Ripple();
                     this.underwater = new core_1.Composite();
                     this.underwater.addLayer(new bottom_1.Bottom());
-                    //this.underwater.addLayer(new Grid());
+                    this.underwater.addLayer(new fish_1.Fishies());
                     this.addLayer(this.underwater);
                     this.addLayer(this.ripple);
                     this.underwater.view.filters = [this.ripple.filter];
                     this.stage.addChild(this.view);
                 }
             };
-            exports_5("App", App);
+            exports_6("App", App);
         }
     };
 });
-System.register("index", ["pixi.js", "app"], function (exports_6, context_6) {
+System.register("index", ["pixi.js", "app"], function (exports_7, context_7) {
     "use strict";
-    var __moduleName = context_6 && context_6.id;
+    var __moduleName = context_7 && context_7.id;
     var PIXI, app_1, renderer, stage, app, container, resizeApp, onReady, counter, onUpdate;
     return {
         setters: [
-            function (PIXI_4) {
-                PIXI = PIXI_4;
+            function (PIXI_5) {
+                PIXI = PIXI_5;
             },
             function (app_1_1) {
                 app_1 = app_1_1;

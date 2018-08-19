@@ -1,8 +1,9 @@
 import * as PIXI from 'pixi.js';
 
-import { Composite, Grid } from './core';
+import { Composite } from './core';
 
 import { Bottom } from './bottom';
+import { Fishies } from './fish';
 import { Ripple } from './ripple';
 import { Interaction } from './interaction';
 
@@ -11,7 +12,7 @@ export class App extends Composite {
   constructor(public readonly stage:PIXI.Container) {
     super();
     this.underwater.addLayer(new Bottom());
-    //this.underwater.addLayer(new Grid());
+    this.underwater.addLayer(new Fishies());
     this.addLayer(this.underwater);
     this.addLayer(this.ripple);
     this.underwater.view.filters = [ this.ripple.filter ];

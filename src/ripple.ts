@@ -105,7 +105,7 @@ export class Ripple implements IUpdatable, IResizable, IVisible {
       const amp = c.amplitude * 0.1;
       for (let i:number = 0; i < c.stops; i++) {
         const pos = i / (c.stops - 1);
-        const v = (i % 2 == 0) ? '255' : '0';
+        const v = (i % 2 == 0) ? '223' : '32';
         g.addColorStop(pos, 'rgba('+v+', '+v+', '+v+', '+amp+')');
       }
       ctx.fillStyle = g;
