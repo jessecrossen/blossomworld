@@ -14,8 +14,8 @@ export class App extends Composite {
     this.underwater.addLayer(new Bottom());
     this.underwater.addLayer(this.fishies);
     this.addLayer(this.underwater);
-    //this.addLayer(this.ripple);
-    //this.underwater.view.filters = [ this.ripple.filter ];
+    this.addLayer(this.ripple);
+    this.underwater.view.filters = [ this.ripple.filter ];
     this.stage.addChild(this.view);
   }
   public readonly interaction:Interaction = new Interaction(this);

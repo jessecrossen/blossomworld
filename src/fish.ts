@@ -10,15 +10,16 @@ type Fish = {
   length:number,
   cycle:number,
   color: number,
-  headAmplitude:number,
-  tailAmplitude:number,
+  amplitude:number,
   angle:number,
   velocity:number,
   angleDelta:number,
   velocityDelta:number,
-  target?:Vector
+  target?:Vector,
+  angleHistory:number[],
+  angleHistorySum:number,
+  turnAngle:number
 };
-const TURN_DELTA:number = 0.1;
 
 type Vector = { x:number, y:number };
 
@@ -54,7 +55,7 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
   }
 
   //!!! temporary
-  public readonly oneFish:Fish = this._makeFish(400, 400, 20);
+  public readonly oneFish:Fish = this._makeFish(600, 400, 20);
 
   public readonly view:PIXI.Sprite = new PIXI.Sprite();
   private _graphics:PIXI.Graphics;
@@ -68,8 +69,10 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
       angle: 0, 
       velocity: 0, 
       cycle: 0,
-      headAmplitude: 0.8, tailAmplitude: 0.8,
-      angleDelta: 0, velocityDelta: 0
+      amplitude: 0.8,
+      angleDelta: 0, velocityDelta: 0,
+      angleHistory: [ ], angleHistorySum: 0,
+      turnAngle: 0
     });
   }
   private _fish:Set<Fish> = new Set();
@@ -98,9 +101,10 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
   protected _lastUpdateTime:number;
 
   protected _steerFish(f:Fish):void {
+    const drag:number = - 16;
     if (! f.target) {
       f.angleDelta = approach(f.angleDelta, 0);
-      f.velocityDelta = approach(f.velocityDelta, 0);
+      f.velocityDelta = approach(f.velocityDelta, drag);
       return;
     }
     const dx = f.target.x - f.x;
@@ -120,7 +124,7 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
     // change speed
     const travelTime = d / f.velocity;
     if (travelTime < 1.0) {
-      f.velocityDelta = approach(f.velocityDelta, - 16);
+      f.velocityDelta = approach(f.velocityDelta, drag);
     }
     else {
       f.velocityDelta = travelTime * 2;
@@ -128,25 +132,31 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
   }
 
   protected _moveFish(f:Fish, elapsed:number):void {
-    if (f.angleDelta < - TURN_DELTA) {
+    // keep a moving average of angles for drawing turning motions
+    f.angleHistory.push(f.angle);
+    f.angleHistorySum += f.angle;
+    while (f.angleHistory.length > Math.ceil(0.25 / elapsed)) {
+      f.angleHistorySum -= f.angleHistory.shift();
+    }
+    f.turnAngle = approach(f.turnAngle, 
+      ((f.angleHistorySum / f.angleHistory.length) - f.angle) * 2);
+    // adjust cycle and amplitude for swimming motions
+    let turning:boolean = false;
+    if (f.angleDelta < - 0.01) {
       if (! (f.velocityDelta > 0)) f.cycle = approach(f.cycle, 0.25);
-      f.headAmplitude = approach(f.headAmplitude, 4);
-      f.tailAmplitude = approach(f.tailAmplitude, 0);
+      turning = true;
     }
-    else if (f.angleDelta > TURN_DELTA) {
+    else if (f.angleDelta > 0.01) {
       if (! (f.velocityDelta > 0)) f.cycle = approach(f.cycle, 0.75);
-      f.headAmplitude = approach(f.headAmplitude, 4);
-      f.tailAmplitude = approach(f.tailAmplitude, 0);
+      turning = true;
     }
-    if (f.velocityDelta > 0) {
+    if ((f.velocityDelta > 0) && (! turning)) {
       f.cycle = (f.cycle + (f.velocity * 0.01 * elapsed)) % 1;
-      f.headAmplitude = approach(f.headAmplitude, Math.min(f.velocityDelta * 0.05, 0.6));
-      f.tailAmplitude = approach(f.tailAmplitude, f.headAmplitude * 2);
+      f.amplitude = approach(f.amplitude, Math.min(f.velocityDelta * 0.05, 0.6));
     }
     else {
       f.cycle = (f.cycle + 0.3 * elapsed) % 1;
-      f.headAmplitude = approach(f.headAmplitude, 0.1);
-      f.tailAmplitude = approach(f.tailAmplitude, 0.2);
+      f.amplitude = approach(f.amplitude, 0.2);
     }
     if (! isNaN(f.angleDelta)) f.angle += f.angleDelta;
     if (! isNaN(f.velocityDelta)) {
@@ -168,87 +178,98 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
     const headLen = f.length * 0.3;
     const tailLen = f.length * 0.7;
     const tailWidth = f.width * 0.125;
+    const segmentCount = (4 * 3) + 2; // only change the first number
+    const segmentLength = tailLen / segmentCount;
     const center = offset(f, f.angle + rightAngle, 
-      Math.sin(f.cycle * Math.PI * 2) * f.width * 0.2 * f.headAmplitude);
-    const turning = ((f.angleDelta < - TURN_DELTA) || 
-                     (f.angleDelta > TURN_DELTA));
+      Math.sin(f.cycle * Math.PI * 2) * f.width * 0.2 * f.amplitude);
     // compute body bending
     const bendForCycle = (cycle:number):number => 
       Math.sin(cycle * Math.PI * 2) * 0.2;
-    const bend = bendForCycle(f.cycle);
+    const bend = (bendForCycle(f.cycle) * f.amplitude) + f.turnAngle;
     // position head
-    const headAngle = f.angle - (bend * f.headAmplitude);
+    const headAngle = f.angle - bend;
     const noseCurve = f.width * 0.3;
     const nose = offset(center, headAngle, headLen);
     const noseLeft = offset(nose, headAngle - rightAngle, noseCurve);
     const noseRight = offset(nose, headAngle + rightAngle, noseCurve);
     // position midsection
     const bendFactor = Math.min(Math.abs(bend) / 0.25, 1.0) * 0.25;
-    const midCurve = (headLen + tailLen) * 0.25;
-    const midCurveOuter = midCurve * (0.6 + (bendFactor * 1.75));
-    const midCurveInner = midCurve * (0.6 - bendFactor);
+    const midCurve = headLen * 0.25;
+    const midCurveOuter = midCurve * (0.6 + (bendFactor * 5));
+    const midCurveInner = midCurve * (0.6 - (bendFactor * 0.25));
     const midCurveLeft = bend < 0 ? midCurveOuter : midCurveInner;
     const midCurveRight = bend > 0 ? midCurveOuter : midCurveInner;
     const midLeft = offset(center, f.angle - rightAngle, f.width * 0.5);
     const midRight = offset(center, f.angle + rightAngle, f.width * 0.5);
     const midLeftFront = offset(midLeft, f.angle, midCurveLeft);
-    const midLeftBack = offset(midLeft, f.angle, - midCurveLeft);
     const midRightFront = offset(midRight, f.angle, midCurveRight);
-    const midRightBack = offset(midRight, f.angle, - midCurveRight);
-    // position tail
-    const tailAngle = f.angle + Math.PI + (bend * f.tailAmplitude);
-    const tailCurve = tailLen * 0.3;
-    const tailCurveAngle = f.angle - bendForCycle((f.cycle + 0.25) % 1);
-    const tail = offset(center, tailAngle, tailLen);
-    const tailLeft = offset(tail, tailAngle + rightAngle, tailWidth);
-    const tailRight = offset(tail, tailAngle - rightAngle, tailWidth);
-    const tailLeftFront = offset(tailLeft, tailCurveAngle, tailCurve);
-    const tailRightFront = offset(tailRight, tailCurveAngle, tailCurve);
-    const tailLeftBack = offset(tailLeft, tailCurveAngle, - (tailCurve * 0.25));
-    const tailRightBack = offset(tailRight, tailCurveAngle, - (tailCurve * 0.25));
+    // position tail segments
+    const leftSegments:Vector[] = [ ];
+    const rightSegments:Vector[] = [ ];
+    let p:Vector = center;
+    let angle:number = f.angle + Math.PI;
+    let angleStep:number = (bend / 3);
+    let taper:number = ((f.width * 0.5) - tailWidth) / segmentCount;
+    let width:number = f.width * 0.5;
+    for (let i:number = 0; i < segmentCount - 3; i++) {
+      width -= taper;
+      taper *= 1.05;
+      p = offset(p, angle, segmentLength);
+      const left = offset(p, angle + rightAngle, width);
+      const right = offset(p, angle - rightAngle, width);
+      leftSegments.push(left);
+      rightSegments.unshift(right);
+      angle += angleStep;
+    }
+    const tail = offset(p, angle, segmentLength);
+    const tailLeft = offset(tail, angle + rightAngle, tailWidth);
+    const tailRight = offset(tail, angle - rightAngle, tailWidth);
+    const tailCurve = tailLen * 0.075;
+    const tailLeftBack = offset(tailLeft, angle, tailCurve);
+    const tailRightBack = offset(tailRight, angle, tailCurve);
     // position pectoral fins
     const pecRadius = f.width * 0.6;
     const pecCurve = pecRadius * 0.3;
-    const pecLeftAngle = tailCurveAngle - (rightAngle * 1.7);
-    const pecRightAngle = tailCurveAngle + (rightAngle * 1.7);
+    const pecAngle = f.angle + bendForCycle((f.cycle + 0.3) % 1);
+    const pecLeftAngle = pecAngle - (rightAngle * 1.7);
+    const pecRightAngle = pecAngle + (rightAngle * 1.7);
     const pecLeft = offset(midLeft, pecLeftAngle, pecRadius);
     const pecRight = offset(midRight, pecRightAngle, pecRadius);
     const pecLeftControl = offset(midLeft, f.angle - rightAngle, pecCurve);
     const pecRightControl = offset(midRight, f.angle + rightAngle, pecCurve);
-    const pecCenter = offset(center, tailAngle, pecRadius * 0.6);
+    const pecCenter = offset(center, f.angle + Math.PI, pecRadius * 0.6);
     // position tail fins
     const tailfinLen = f.length * 0.25;
     const tailfinRadius = f.width * 0.6;
     const tailfinCurve = tailfinLen * 0.6;
-    const tailfinBaseAngle = turning ? tailAngle + bend : headAngle + Math.PI;
-    let tailfinAngle = turning ? tailAngle : f.angle + Math.PI;
-    if (! turning) tailfinAngle += (bendForCycle((f.cycle + 0.2) % 1) * 1.5);
-    const tailfin = offset(tail, tailfinBaseAngle, tailfinLen);
+    const tailfinAngle = angle + (bendForCycle((f.cycle + 0.2) % 1) * f.amplitude * 2) - f.turnAngle;
+    const tailfin = offset(tail, angle, tailfinLen);
     const tailfinLeft = offset(tailfin, tailfinAngle + (rightAngle * 0.25), tailfinRadius);
     const tailfinRight = offset(tailfin, tailfinAngle - (rightAngle * 0.25), tailfinRadius);
     const tailfinLeftFront = offset(tailfinLeft, tailfinAngle, - tailfinCurve);
     const tailfinRightFront = offset(tailfinRight, tailfinAngle, - tailfinCurve);
-    const tailfinNotch = offset(tail, tailfinBaseAngle, tailfinLen * 0.5);
+    const tailfinNotch = offset(tail, angle, tailfinLen * 0.5);
+
+    // sequence body points
+    const points:Vector[] = [].concat([
+      nose, 
+      noseLeft, midLeftFront, midLeft ], 
+      leftSegments, [ tailLeft,
+      tailLeftBack, tailfinLeftFront, tailfinLeft,
+      tailfinLeftFront, tailfinNotch, tail,
+      tailfinNotch, tailfinRightFront, tailfinRight,
+      tailfinRightFront, tailRightBack, tailRight ], 
+      rightSegments, [ midRight,
+      midRightFront, noseRight, nose
+    ]);
 
     // draw body
     g.beginFill(f.color);
-    g.moveTo(nose.x, nose.y);
-    g.bezierCurveTo(noseLeft.x, noseLeft.y, midLeftFront.x, midLeftFront.y,
-      midLeft.x, midLeft.y);
-    g.bezierCurveTo(midLeftBack.x, midLeftBack.y, tailLeftFront.x, tailLeftFront.y,
-      tailLeft.x, tailLeft.y);
-    g.bezierCurveTo(tailLeftBack.x, tailLeftBack.y, 
-      tailfinLeftFront.x, tailfinLeftFront.y, tailfinLeft.x, tailfinLeft.y);
-    g.bezierCurveTo(tailfinLeftFront.x, tailfinLeftFront.y, 
-      tailfinNotch.x, tailfinNotch.y, tail.x, tail.y);
-    g.bezierCurveTo(tailfinNotch.x, tailfinNotch.y, 
-      tailfinRightFront.x, tailfinRightFront.y, tailfinRight.x, tailfinRight.y);
-    g.bezierCurveTo(tailfinRightFront.x, tailfinRightFront.y, 
-      tailRightBack.x, tailRightBack.y, tailRight.x, tailRight.y);
-    g.bezierCurveTo(tailRightFront.x, tailRightFront.y, midRightBack.x, midRightBack.y,
-      midRight.x, midRight.y);
-    g.bezierCurveTo(midRightFront.x, midRightFront.y, noseRight.x, noseRight.y,
-      nose.x, nose.y);
+    g.moveTo(points[0].x, points[0].y);
+    for (let i:number = 1; i < points.length; i += 3) {
+      g.bezierCurveTo(points[i].x, points[i].y, 
+        points[i+1].x, points[i+1].y, points[i+2].x, points[i+2].y);
+    }
     g.endFill();
 
     // draw translucent parts
@@ -272,6 +293,22 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
       midRight.x, midRight.y);
     g.lineTo(midLeft.x, midLeft.y);
     g.endFill();
+
+    // show nodes for debugging
+    // g.lineStyle(1, 0x00FF00, 0.5);
+    // g.moveTo(points[0].x, points[0].y);
+    // for (let i:number = 1; i < points.length; i++) {
+    //   g.lineTo(points[i].x, points[i].y);
+    // }
+    // g.lineTo(points[0].x, points[0].y);
+    // for (let i:number = 0; i < points.length; i += 3) {
+    //   g.drawCircle(points[i].x, points[i].y, 2);
+    // }
+    // g.lineStyle(1, 0x00FFFF, 0.5);
+    // for (let i:number = 0; i < points.length; i++) {
+    //   if (i % 3 != 0) g.drawCircle(points[i].x, points[i].y, 2);
+    // }
+    // g.lineStyle(0);
 
   }
 
