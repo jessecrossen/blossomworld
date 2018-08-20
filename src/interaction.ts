@@ -27,6 +27,8 @@ export class Interaction {
         this._lastDropTime = now;
       }
     }
+    //!!! temporary
+    this.app.fishies.oneFish.target = p;
   }
   private _lastDropTime:number = 0.0;
 

@@ -26,7 +26,6 @@ export class Ripple implements IUpdatable, IResizable, IVisible {
     this.visibleSprite = new PIXI.Sprite(this._texture);
     this.visibleSprite.alpha = 0.05;
     this.visibleSprite.filters = [ new filter.BlurFilter() ];
-    this.visibleSprite.blendMode = PIXI.BLEND_MODES.SCREEN;
     this.visibleSprite.tint = 0xFFFFCC;
     // make a sprite to add a refraction effect to the ripples
     this.filterSprite = new PIXI.Sprite(this._texture);

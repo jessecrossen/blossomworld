@@ -199,7 +199,7 @@ System.register("bottom", ["pixi.js"], function (exports_2, context_2) {
 System.register("fish", ["pixi.js", "pixi-filters"], function (exports_3, context_3) {
     "use strict";
     var __moduleName = context_3 && context_3.id;
-    var PIXI, filter, TURN_DELTA, Fishies;
+    var PIXI, filter, TURN_DELTA, approach, offset, Fishies;
     return {
         setters: [
             function (PIXI_3) {
@@ -210,9 +210,14 @@ System.register("fish", ["pixi.js", "pixi-filters"], function (exports_3, contex
             }
         ],
         execute: function () {
-            TURN_DELTA = 0.005;
+            TURN_DELTA = 0.1;
+            approach = (v, target, f = 0.05) => ((v * (1 - f)) + (target * f));
+            offset = (p, a, len) => ({ x: p.x + (Math.cos(a) * len),
+                y: p.y + (Math.sin(a) * len) });
             Fishies = class Fishies {
                 constructor() {
+                    //!!! temporary
+                    this.oneFish = this._makeFish(400, 400, 20);
                     this.view = new PIXI.Sprite();
                     this._fish = new Set();
                     this._width = 0;
@@ -234,12 +239,20 @@ System.register("fish", ["pixi.js", "pixi-filters"], function (exports_3, contex
                         })
                     ];
                     //!!!
-                    this._fish.add({ x: 600, y: 400, width: 20, length: 120,
-                        color: 0x010000,
-                        angle: 0, velocity: 0.02,
-                        cycle: 0, headAmplitude: 0.8, tailAmplitude: 0.8,
-                        angleDelta: 0.001,
-                        velocityDelta: 0.00001 });
+                    this._fish.add(this.oneFish);
+                }
+                _makeFish(x, y, size) {
+                    return ({
+                        x, y,
+                        width: Math.round(size + (size * Math.random() * 0.1)),
+                        length: Math.round((size * 6) + (size * Math.random() * 0.1)),
+                        color: 0x400000,
+                        angle: 0,
+                        velocity: 0,
+                        cycle: 0,
+                        headAmplitude: 0.8, tailAmplitude: 0.8,
+                        angleDelta: 0, velocityDelta: 0
+                    });
                 }
                 get width() { return (this._width); }
                 get height() { return (this._height); }
@@ -250,15 +263,48 @@ System.register("fish", ["pixi.js", "pixi-filters"], function (exports_3, contex
                     this._height = h;
                 }
                 update() {
+                    const now = window.performance.now() / 1000;
+                    const elapsed = isNaN(this._lastUpdateTime) ? 0 : now - this._lastUpdateTime;
+                    this._lastUpdateTime = now;
                     this._graphics.clear();
                     for (const f of this._fish) {
-                        this._moveFish(f);
+                        this._steerFish(f);
+                        this._moveFish(f, elapsed);
                         this._drawFish(this._graphics, f);
                     }
                 }
-                _moveFish(f) {
-                    const changeFactor = 0.05;
-                    const approach = (v, target) => ((v * (1 - changeFactor)) + (target * changeFactor));
+                _steerFish(f) {
+                    if (!f.target) {
+                        f.angleDelta = approach(f.angleDelta, 0);
+                        f.velocityDelta = approach(f.velocityDelta, 0);
+                        return;
+                    }
+                    const dx = f.target.x - f.x;
+                    const dy = f.target.y - f.y;
+                    const a = Math.atan2(dy, dx);
+                    const d = Math.sqrt((dx * dx) + (dy * dy));
+                    let da = a - f.angle;
+                    if (da < -Math.PI)
+                        da += Math.PI * 2;
+                    else if (da > Math.PI)
+                        da -= Math.PI * 2;
+                    // change direction
+                    if (d > 64) {
+                        f.angleDelta = approach(f.angleDelta, Math.min((da / Math.PI) * 0.1, 0.2));
+                    }
+                    else {
+                        f.angleDelta = approach(f.angleDelta, 0);
+                    }
+                    // change speed
+                    const travelTime = d / f.velocity;
+                    if (travelTime < 1.0) {
+                        f.velocityDelta = approach(f.velocityDelta, -16);
+                    }
+                    else {
+                        f.velocityDelta = travelTime * 2;
+                    }
+                }
+                _moveFish(f, elapsed) {
                     if (f.angleDelta < -TURN_DELTA) {
                         if (!(f.velocityDelta > 0))
                             f.cycle = approach(f.cycle, 0.25);
@@ -272,22 +318,22 @@ System.register("fish", ["pixi.js", "pixi-filters"], function (exports_3, contex
                         f.tailAmplitude = approach(f.tailAmplitude, 0);
                     }
                     if (f.velocityDelta > 0) {
-                        f.cycle = (f.cycle + f.velocity) % 1;
-                        f.headAmplitude = approach(f.headAmplitude, Math.min(f.velocityDelta / 0.001, 1.0));
-                        f.tailAmplitude = approach(f.tailAmplitude, f.headAmplitude);
+                        f.cycle = (f.cycle + (f.velocity * 0.01 * elapsed)) % 1;
+                        f.headAmplitude = approach(f.headAmplitude, Math.min(f.velocityDelta * 0.05, 0.6));
+                        f.tailAmplitude = approach(f.tailAmplitude, f.headAmplitude * 2);
                     }
                     else {
-                        f.cycle = (f.cycle + 0.01) % 1;
+                        f.cycle = (f.cycle + 0.3 * elapsed) % 1;
                         f.headAmplitude = approach(f.headAmplitude, 0.1);
                         f.tailAmplitude = approach(f.tailAmplitude, 0.2);
                     }
                     if (!isNaN(f.angleDelta))
                         f.angle += f.angleDelta;
                     if (!isNaN(f.velocityDelta)) {
-                        f.velocity = Math.min(Math.max(0, f.velocity + f.velocityDelta), 0.2);
+                        f.velocity = Math.min(Math.max(0, f.velocity + (f.velocityDelta * elapsed)), 128);
                     }
-                    f.x += f.length * f.velocity * Math.cos(f.angle);
-                    f.y += f.length * f.velocity * Math.sin(f.angle);
+                    f.x += f.velocity * elapsed * Math.cos(f.angle);
+                    f.y += f.velocity * elapsed * Math.sin(f.angle);
                     // wrap fish
                     if (f.x <= -this.width * 0.5)
                         f.x += this.width * 2;
@@ -299,8 +345,6 @@ System.register("fish", ["pixi.js", "pixi-filters"], function (exports_3, contex
                         f.y -= this.height * 2;
                 }
                 _drawFish(g, f) {
-                    const offset = (p, a, len) => ({ x: p.x + (Math.cos(a) * len),
-                        y: p.y + (Math.sin(a) * len) });
                     const rightAngle = Math.PI / 2;
                     // set overall parameters
                     const headLen = f.length * 0.3;
@@ -428,7 +472,6 @@ System.register("ripple", ["pixi.js", "pixi-filters"], function (exports_4, cont
                     this.visibleSprite = new PIXI.Sprite(this._texture);
                     this.visibleSprite.alpha = 0.05;
                     this.visibleSprite.filters = [new filter.BlurFilter()];
-                    this.visibleSprite.blendMode = PIXI.BLEND_MODES.SCREEN;
                     this.visibleSprite.tint = 0xFFFFCC;
                     // make a sprite to add a refraction effect to the ripples
                     this.filterSprite = new PIXI.Sprite(this._texture);
@@ -575,6 +618,8 @@ System.register("interaction", [], function (exports_5, context_5) {
                             this._lastDropTime = now;
                         }
                     }
+                    //!!! temporary
+                    this.app.fishies.oneFish.target = p;
                 }
                 onMouseUp(e) {
                     this._mouseIsDown = false;
@@ -617,12 +662,13 @@ System.register("app", ["core", "bottom", "fish", "ripple", "interaction"], func
                     this.stage = stage;
                     this.interaction = new interaction_1.Interaction(this);
                     this.ripple = new ripple_1.Ripple();
+                    this.fishies = new fish_1.Fishies();
                     this.underwater = new core_1.Composite();
                     this.underwater.addLayer(new bottom_1.Bottom());
-                    this.underwater.addLayer(new fish_1.Fishies());
+                    this.underwater.addLayer(this.fishies);
                     this.addLayer(this.underwater);
-                    this.addLayer(this.ripple);
-                    this.underwater.view.filters = [this.ripple.filter];
+                    //this.addLayer(this.ripple);
+                    //this.underwater.view.filters = [ this.ripple.filter ];
                     this.stage.addChild(this.view);
                 }
             };

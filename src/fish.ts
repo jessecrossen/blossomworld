@@ -14,10 +14,21 @@ type Fish = {
   tailAmplitude:number,
   angle:number,
   velocity:number,
-  angleDelta?:number,
-  velocityDelta?:number
+  angleDelta:number,
+  velocityDelta:number,
+  target?:Vector
 };
-const TURN_DELTA:number = 0.005;
+const TURN_DELTA:number = 0.1;
+
+type Vector = { x:number, y:number };
+
+const approach = (v:number, target:number, f:number = 0.05):number => 
+      ((v * (1 - f)) + (target * f));
+
+const offset = 
+      (p:Vector, a:number, len:number):Vector =>
+        ({ x: p.x + (Math.cos(a) * len),
+           y: p.y + (Math.sin(a) * len) });
 
 export class Fishies implements IResizable, IVisible, IUpdatable {
 
@@ -39,16 +50,28 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
       }) ];
 
     //!!!
-    this._fish.add({ x: 600, y: 400, width: 20, length: 120, 
-                     color: 0x010000, 
-                     angle: 0, velocity: 0.02, 
-                     cycle: 0, headAmplitude: 0.8, tailAmplitude: 0.8,
-                     angleDelta: 0.001,
-                     velocityDelta: 0.00001 });
+    this._fish.add(this.oneFish);
   }
+
+  //!!! temporary
+  public readonly oneFish:Fish = this._makeFish(400, 400, 20);
 
   public readonly view:PIXI.Sprite = new PIXI.Sprite();
   private _graphics:PIXI.Graphics;
+
+  protected _makeFish(x:number, y:number, size:number):Fish {
+    return({
+      x, y, 
+      width: Math.round(size + (size * Math.random() * 0.1)), 
+      length: Math.round((size * 6) + (size * Math.random() * 0.1)), 
+      color: 0x400000, 
+      angle: 0, 
+      velocity: 0, 
+      cycle: 0,
+      headAmplitude: 0.8, tailAmplitude: 0.8,
+      angleDelta: 0, velocityDelta: 0
+    });
+  }
   private _fish:Set<Fish> = new Set();
 
   public get width():number { return(this._width); }
@@ -62,17 +85,49 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
   }
 
   public update():void {
+    const now = window.performance.now() / 1000;
+    const elapsed = isNaN(this._lastUpdateTime) ? 0 : now - this._lastUpdateTime;
+    this._lastUpdateTime = now;
     this._graphics.clear();
     for (const f of this._fish) {
-      this._moveFish(f);
+      this._steerFish(f);
+      this._moveFish(f, elapsed);
       this._drawFish(this._graphics, f);
     }
   }
+  protected _lastUpdateTime:number;
 
-  protected _moveFish(f:Fish):void {
-    const changeFactor:number = 0.05;
-    const approach = (v:number, target:number):number => 
-      ((v * (1 - changeFactor)) + (target * changeFactor));
+  protected _steerFish(f:Fish):void {
+    if (! f.target) {
+      f.angleDelta = approach(f.angleDelta, 0);
+      f.velocityDelta = approach(f.velocityDelta, 0);
+      return;
+    }
+    const dx = f.target.x - f.x;
+    const dy = f.target.y - f.y;
+    const a = Math.atan2(dy, dx);
+    const d = Math.sqrt((dx * dx) + (dy * dy));
+    let da = a - f.angle;
+    if (da < - Math.PI) da += Math.PI * 2;
+    else if (da > Math.PI) da -= Math.PI * 2;
+    // change direction
+    if (d > 64) {
+      f.angleDelta = approach(f.angleDelta, Math.min((da / Math.PI) * 0.1, 0.2));
+    }
+    else {
+      f.angleDelta = approach(f.angleDelta, 0);
+    }
+    // change speed
+    const travelTime = d / f.velocity;
+    if (travelTime < 1.0) {
+      f.velocityDelta = approach(f.velocityDelta, - 16);
+    }
+    else {
+      f.velocityDelta = travelTime * 2;
+    }
+  }
+
+  protected _moveFish(f:Fish, elapsed:number):void {
     if (f.angleDelta < - TURN_DELTA) {
       if (! (f.velocityDelta > 0)) f.cycle = approach(f.cycle, 0.25);
       f.headAmplitude = approach(f.headAmplitude, 4);
@@ -84,21 +139,22 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
       f.tailAmplitude = approach(f.tailAmplitude, 0);
     }
     if (f.velocityDelta > 0) {
-      f.cycle = (f.cycle + f.velocity) % 1;
-      f.headAmplitude = approach(f.headAmplitude, Math.min(f.velocityDelta / 0.001, 1.0));
-      f.tailAmplitude = approach(f.tailAmplitude, f.headAmplitude);
+      f.cycle = (f.cycle + (f.velocity * 0.01 * elapsed)) % 1;
+      f.headAmplitude = approach(f.headAmplitude, Math.min(f.velocityDelta * 0.05, 0.6));
+      f.tailAmplitude = approach(f.tailAmplitude, f.headAmplitude * 2);
     }
     else {
-      f.cycle = (f.cycle + 0.01) % 1;
+      f.cycle = (f.cycle + 0.3 * elapsed) % 1;
       f.headAmplitude = approach(f.headAmplitude, 0.1);
       f.tailAmplitude = approach(f.tailAmplitude, 0.2);
     }
     if (! isNaN(f.angleDelta)) f.angle += f.angleDelta;
     if (! isNaN(f.velocityDelta)) {
-      f.velocity = Math.min(Math.max(0, f.velocity + f.velocityDelta), 0.2);
+      f.velocity = Math.min(Math.max(0, 
+        f.velocity + (f.velocityDelta * elapsed)), 128);
     }
-    f.x += f.length * f.velocity * Math.cos(f.angle);
-    f.y += f.length * f.velocity * Math.sin(f.angle);
+    f.x += f.velocity * elapsed * Math.cos(f.angle);
+    f.y += f.velocity * elapsed * Math.sin(f.angle);
     // wrap fish
     if (f.x <= - this.width * 0.5) f.x += this.width * 2;
     if (f.y <= - this.height * 0.5) f.y += this.height * 2;
@@ -107,10 +163,6 @@ export class Fishies implements IResizable, IVisible, IUpdatable {
   }
 
   protected _drawFish(g:PIXI.Graphics, f:Fish):void {
-    const offset = 
-      (p:{x:number,y:number}, a:number, len:number):{x:number,y:number} =>
-        ({ x: p.x + (Math.cos(a) * len),
-           y: p.y + (Math.sin(a) * len) });
     const rightAngle:number = Math.PI / 2;
     // set overall parameters
     const headLen = f.length * 0.3;
